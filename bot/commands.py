@@ -32,6 +32,7 @@ commands = [  # command description used in the "help" command
     '/board - Prints the current board with fascist and liberals tracks, presidential order and election counter',
     '/votes - Prints who voted',
     '/calltovote - Calls the players to vote'
+    '/trusted - shows trusted players in jackstrat'
 ]
 
 symbols = [
@@ -288,7 +289,7 @@ def start_game(message):
 def load_crashed_game(message):
     chat_id = message.chat.id
     game = GamesController.get_game(chat_id)
-    print(game.get_game_phase())
+    #print(game.get_game_phase())
     if game.get_game_phase() != "waiting_for_players":
         bot.send_message(chat_id, "Game has started, cannot load prior game instance.")
     else:
@@ -330,9 +331,9 @@ def start_game(message):
         #and not is_admin(message.from_user.id, chat_id)
     elif message.from_user.id != game.initiator_id and bot.getChatMember(chat_id, message.from_user.id).status not in ("administrator", "creator"): 
         bot.send_message(chat_id, "Only the initiator of the game or a group admin can start the game with /startgame")
-    elif len(game.players) < 5:
+    elif len(game.players) < 8:
         if TEST:
-           game.add_test_players(player_gap=( 5 - len(game.players)))
+           game.add_test_players(player_gap=( 8 - len(game.players)))
         bot.send_message(chat_id, "There are not enough players (min. 5, max. 10). Join the game with /join")
     else:
         start_message = game.start_game(bot, game)
@@ -410,7 +411,14 @@ def show_board(message):
         bot.send_message(chat_id, board)
     else:
         bot.send_message(chat_id, "No game in progress.")
-
+@bot.message_handler(commands=['trusted'])
+def show_trusted(message):
+    chat_id = message.chat.id
+    game = GamesController.get_game(chat_id)
+    if game:
+        bot.send_message(chat_id, f"{game.board.state.trusted} Are the trusted")
+    else:
+        bot.send_message(chat_id, "No game in progress.")
 @bot.message_handler(commands=['help'])
 def send_help(message):
     chat_id = message.chat.id

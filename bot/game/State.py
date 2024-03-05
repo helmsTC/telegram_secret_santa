@@ -17,3 +17,4 @@ class State(object):
         self.player_counter = 0
         self.veto_refused = False
         self.not_hitlers = []
+        self.trusted = []

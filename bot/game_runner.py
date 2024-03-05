@@ -9,9 +9,12 @@ import re
 from config import TEST
 import threading
 from apscheduler.schedulers.background import BackgroundScheduler
+from jacks_strat import JackStrat
 test_timeout = False
 scheduler = BackgroundScheduler()
 scheduler.start()
+jackStrat = JackStrat()
+
 def start_round(bot, game):
     print('start_round called')
     print("Debug Info:")
@@ -29,6 +32,8 @@ def start_round(bot, game):
         # Update the nominated president and reset the chosen president
         game.board.state.nominated_president = game.board.state.chosen_president
         game.board.state.chosen_president = None
+        game.board.state.chosen_president_index = None  # reset the saved index
+
     else:
         # If no special president, revert back to the saved index if it exists and then advance the turn
         if hasattr(game.board.state, 'chosen_president_index') and game.board.state.chosen_president_index is not None:
@@ -37,7 +42,6 @@ def start_round(bot, game):
         # Now advance the turn in normal sequence
         game.turn = (game.turn + 1) % len(game.player_sequence)
         game.board.state.nominated_president = game.player_sequence[game.turn]
-
     # Send message about the nominated president
     bot.send_message(game.chat_id,
                      "The next presidential candidate is %s.\n%s, please nominate a Chancellor in our private chat!" % (
@@ -77,14 +81,25 @@ def choose_chancellor(bot, game):
         bot.send_message(game.board.state.nominated_president.user_id, 'Please nominate your chancellor!',
                          reply_markup=chancellorMarkup)
     else:  # case for test player
-        # pick the first available player as chancellor
+        # pick the first available player as chancellor(OLD LOGIC)
+        # For jackStrat method, look for players in the trusted list, if the trusted list is available and full
         for player in game.get_players():
             if  re.search('test', str(player.user_id)):
                 if player.user_id != game.board.state.nominated_president.user_id and player.alive == True and player.user_id != chan_player:
                     # simulate the callback logic
                     print(f"Simulating callback with data: {strcid}, {player.user_id}")
                     # Find the player instance by user ID
-                    chosen_chancellor = next((p for p in game.get_players() if p.user_id == player.user_id), None)
+                    #chosen_chancellor = next((p for p in game.get_players() if p.user_id == player.user_id), None)
+                    if game.board.state.nominated_president.party == 'liberal' and len(jackStrat.trusted) >=2:
+                            trusted_and_in_game = [p for p in game.get_players() if p in jackStrat.trusted and p.user_id == player.user_id]
+                            if not trusted_and_in_game:
+                            #if no one is trusted, just random pick
+                                chosen_chancellor = next((p for p in game.get_players() if p.user_id == player.user_id), None)
+                            else:
+                                chosen_chancellor = random.choice(trusted_and_in_game) if trusted_and_in_game else None
+                    else:
+                        chosen_chancellor = next((p for p in game.get_players() if p.user_id == player.user_id), None)
+
                     print("CHOSEN BOT CHANCELLOR: ", chosen_chancellor.name)
                     if chosen_chancellor is None:
                         print("Unknown player")
@@ -173,7 +188,22 @@ def start_bot_voting(bot,game):
     for player in game.get_players():
         if  re.search('test', str(player.user_id)):
             if player.alive:
-                player_vote = random.choice(["Ja", "Nein"])
+                trusted = jackStrat.check_trusted(game.board.state.nominated_president.name)
+                
+                if len(jackStrat.trusted) <= 2:
+                    print("Random cast")
+                    player_vote = 'Ja'
+                elif player.party=='fascist':
+                    player_vote = random.choice(["Ja", "Nein"])
+
+                elif trusted:
+                    print("Homie is a trusted homie")
+                    player_vote = 'Ja'
+                elif not trusted:
+                    print("not a homie")
+                    player_vote = 'Nein'
+
+                    #jacks strat probably implys a no in this case, but going to leave it random for now
                 game.votes[player.user_id] = player_vote
                 print(f"Test player {player.name} ({player.user_id}) voted {player_vote}")
     check_and_count_votes(bot, game)
@@ -262,7 +292,9 @@ def draw_policies(bot, game):
     shuffle_policy_pile(bot, game)
     # Stop the function if there are still not enough policies
     if len(game.board.policies) < 3:
+        shuffle_policy_pile(bot, game)
         bot.send_message(game.chat_id, "There aren't enough policies to draw!")
+        
         return  # Or handle this situation as you see fit
     
     # Clear the drawn_policies list
@@ -283,7 +315,12 @@ def draw_policies(bot, game):
                          "You drew the following 3 policies. Which one do you want to discard?",
                          reply_markup=choosePolicyMarkup)
     else:  # case for test player
-        discarded_policy = random.choice(game.board.state.drawn_policies)
+        # LIBERAL CHOICE
+        if game.board.state.president.party == 'liberal':
+            discarded_policy = 'fascist' if 'fascist' in game.board.state.drawn_policies else "liberal"
+        # FASCIST CHOICE
+        if game.board.state.president.party == 'fascist':
+            discarded_policy = 'liberal' if 'liberal' in game.board.state.drawn_policies else "fascist"      
         game.board.state.drawn_policies.remove(discarded_policy)
         game.board.discards.append(discarded_policy)
         print(f"Test player {game.board.state.president.name} ({game.board.state.president.user_id}) discarded {discarded_policy}")
@@ -332,7 +369,21 @@ def pass_two_policies(bot, game):
 
 def handle_test_player_choice(bot, game):
     # Randomly select a policy
-    policy_choice = random.choice(game.board.state.drawn_policies)
+    party = game.board.state.chancellor.party
+    #policy_choice = random.choice(game.board.state.drawn_policies)
+    #LIBERAL CHOICE
+    if party == 'liberal':
+        if "liberal" in game.board.state.drawn_policies:
+            policy_choice = "liberal"
+        else:
+            policy_choice = random.choice(game.board.state.drawn_policies)
+    # FASCIST CHOICE
+    if party == 'fascist':
+        if 'fascist' in game.board.state.drawn_policies:
+            policy_choice = "fascist"
+        else:
+            policy_choice = random.choice(game.board.state.drawn_policies)
+
     print(f"Test player {game.board.state.chancellor.user_id} chose {policy_choice}")
     # Implement logic here to handle the test player's chosen policy
     game.board.state.drawn_policies.remove(policy_choice)
@@ -347,10 +398,11 @@ def enact_policy(bot, game, policy, anarchy):
         game.board.state.liberal_track += 1
     elif policy == "fascist":
         game.board.state.fascist_track += 1
-    
     game.board.state.failed_votes = 0  # reset counter
     
     if not anarchy:
+        jackStrat.execute(policy, game.board.state.president.name, game.board.state.chancellor.name)
+        game.board.state.trusted  = jackStrat.trusted
         bot.send_message(game.chat_id,
                          "President %s and Chancellor %s enacted a %s policy!" % (
                              game.board.state.president.name, game.board.state.chancellor.name, policy))
@@ -359,6 +411,8 @@ def enact_policy(bot, game, policy, anarchy):
                          "The top most policy was enacted: %s" % policy)
 
     time.sleep(3)
+    game.board.discards.append(policy)
+
     bot.send_message(game.chat_id, game.board.print_board())
     # end of round
     if game.board.state.liberal_track == 5:
@@ -523,9 +577,11 @@ def bot_choose_next_president(bot, game):
         chosen_president = random.choice(alive_players)  # Choose a random player
         print("BOT ASIGN PRESIDENT: ", chosen_president)
         game.board.state.chosen_president = chosen_president  # Assign the chosen player as the next president
+        game.board.state.chosen_president_index = game.player_sequence.index(chosen_president)
         bot.send_message(game.chat_id, f"{game.board.state.president.name} chose {chosen_president.name} as the next presidential candidate!")
     else:
         print('No player available to choose as next president')
+    start_next_round(bot, game)
 
 def action_choose(bot, game):
     print('action_choose called')
@@ -551,9 +607,10 @@ def bot_inspect_player(bot, game):
     alive_players = [player for player in game.get_players() if player.alive == True and player != game.board.state.president]
     if alive_players:  # If there is at least one player to inspect
         player_to_inspect = random.choice(alive_players)  # Choose a random player
-        bot.send_message(game.chat_id, f"{game.board.state.president.name} inspected {player_to_inspect.name} and found out their party membership is {player_to_inspect.party_membership}!")
+        bot.send_message(game.chat_id, f"{game.board.state.president.name} inspected {player_to_inspect.name} and found out their party membership is {player_to_inspect.party}!")
     else:
         print('No player available to inspect')
+    start_next_round(bot, game)
 
 def action_inspect(bot, game):
     print('action_inspect called')
@@ -578,7 +635,7 @@ def start_next_round(bot, game):
         time.sleep(8)
         
         if game.board.state.chosen_president is not None:
-            game.turn = game.board.state.chosen_president_index
+            game.turn = game.board.state.chosen_president_index 
             # Clear the chosen_president_index after using it
             del game.board.state.chosen_president_index
         else:
@@ -594,6 +651,7 @@ def start_next_round(bot, game):
 
 def end_game(bot, game, game_endcode):
     print('end_game called')
+    jackStrat.strat_stats(game.get_players(), game_endcode)
     ##
     # game_endcode:
     #   -2  fascists win by electing Blue as chancellor
@@ -632,6 +690,7 @@ def end_game(bot, game, game_endcode):
                              "Game over! The liberals win by killing Hitler!\n\n%s" % game.print_roles())
             #stats['libwin_kill'] = stats['libwin_kill'] + 1
     print("deleting at end game")
+    jackStrat.clear_trusted()
     del GamesController.games[game.chat_id]
 
             # bot.send_message(ADMIN, "Game of Secret Blue ended in group %d" % game.cid)
@@ -726,8 +785,10 @@ def shuffle_policy_pile(bot, game):
     if len(game.board.policies) < 3:
         print("DISCARDS: ", game.board.discards)
         print("POLICIES: ", game.board.policies)
-        game.board.discards.extend(game.board.policies)  # Combining the remaining policies with the discards
-        random.shuffle(game.board.discards)  # Shuffle the combined pile
+        game.board.discards += game.board.policies
+        #game.board.discards.extend(game.board.policies)  # Combining the remaining policies with the discards
+        game.board.policies = random.sample(game.board.discards, len(game.board.discards))
+        game.board.discards = []
         game.board.policies = game.board.discards  # Assign the shuffled deck to policies
         game.board.discards = []  # Reset the discard pile
 

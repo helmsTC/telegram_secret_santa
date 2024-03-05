@@ -1,0 +1,5 @@
+Game ID: game_ 0, Accuracy: 50.00%, Hitler_in_trusted: 0 Result: facists win by electing hitler
+Game ID: game_ 1, Accuracy: 50.00%, Hitler_in_trusted: 0 Result: facists win by electing hitler
+Game ID: game_ 2, Accuracy: 75.00%, Hitler_in_trusted: 0 Result: liberals win by policies
+Game ID: game_ 3, Accuracy: 75.00%, Hitler_in_trusted: 1 Result: facists win by policies
+Game ID: game_ 4, Accuracy: 75.00%, Hitler_in_trusted: 0 Result: facists win by electing hitler
